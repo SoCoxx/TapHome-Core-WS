@@ -69,6 +69,23 @@ The repository includes a Claude Code skill in [.claude/skills/th/](.claude/skil
 
 Facts about your own installation belong in `site-notes.md` in the clone root (gitignored). The skill reads it and adds to it. Examples: which devices are safe to test with, which modules must never be touched, and where your backups are.
 
+An example of various Claude Code interactions in VS Code
+
+<table>
+<tr>
+<th><code>/th auth</code></th>
+<th><code>/th Turn on the light in the kitchen</code></th>
+<th><code>/th Add a smart rule to button 2.13 that toggles the room's light</code></th>
+</tr>
+<tr>
+<td valign="top"><img width="455" height="1074" alt="/th auth in VS Code" src="https://github.com/user-attachments/assets/2ca17da8-b7f0-4cee-9852-461a13616a50" /></td>
+<td valign="top"><img width="459" height="1112" alt="/th turning on the kitchen light in VS Code" src="https://github.com/user-attachments/assets/d882b67d-e641-483b-9476-a89f4aae5594" /></td>
+<td valign="top"><img width="448" height="1873" alt="/th adding a smart rule in VS Code" src="https://github.com/user-attachments/assets/3b4c4e33-0bcc-48b6-a9c2-cab8c7d6f775" /></td>
+</tr>
+</table>
+
+
+
 ## Tools
 
 All tools live in `probe/` and read `config.json`. Run them from the clone root.
