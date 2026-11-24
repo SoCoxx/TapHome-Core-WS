@@ -1,0 +1,12 @@
+{
+  "host": "192.168.1.50",
+  "username": "admin",
+  "password": "local admin password of the Core",
+  "passwordSalt": "",
+
+  "appDir": "",
+  "translations": "",
+  "modelDir": "",
+
+  "cloud": { "email": "", "password": "" }
+}
