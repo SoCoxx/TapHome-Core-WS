@@ -36,6 +36,7 @@ const frame = enc.message({ ...req, RequestsId: rid }, 'MessageBase');
 const back = dec.message(frame, 'MessageBase');
 console.log(`[request] ${req.$type} ${frame.length} bytes ${J(back)}`);
 if (!s) { console.log(`[dry] ${frame.toString('hex')}`); process.exit(0); }
+if (!READ_ONLY.test(req.$type || '')) s.requireTested(req.$type);
 
 s.conn.sendBinary(frame);
 const t0 = Date.now(), watch = Number(process.env.WATCH || 0) * 1000;

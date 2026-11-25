@@ -9,8 +9,38 @@ import { fileURLToPath } from 'node:url';
 import * as P from './proto.mjs';
 import { connectRaw, messageStream } from './rawws.mjs';
 
-const SW_VERSION = '2025.2.32363.0';
-const PROTO_VER = 89;
+// schema/tested.json: what this client sends (client) and the Core it was last tested against (core). TapHome changes
+// the protocol from time to time, so every session compares the Core's reconnect reply with it: on any difference,
+// reads go on with a warning and writes are refused (UNTESTED_OK=1 overrides). node probe/version.mjs checks a new
+// Core and records it as tested.
+export const TESTED_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', 'schema', 'tested.json');
+export const TESTED = JSON.parse(readFileSync(TESTED_FILE, 'utf8'));
+const SW_VERSION = TESTED.client.softwareVersion;
+const PROTO_VER = TESTED.client.protocolVersion;
+const TOO_OLD = 'the Core rejects this client as too old (AppTooOld): TapHome changed the protocol. Regenerate the schema '
+  + 'from the current app, then raise client.protocolVersion and client.softwareVersion in schema/tested.json '
+  + '(README: "When TapHome updates the protocol")';
+
+// the Core's versions from a MessageReconnectResponse body: 9 CurrentProtocolVersion, 27 TriggerVersions
+// (smart rule type -> format version, a Dictionary<int,int> = repeated {1 key, 2 value}), 28 CoreVersionString
+export function coreVersions(body) {
+  const triggerVersions = {};
+  for (const f of P.all(body, 27)) {
+    const e = P.decode(f.v);
+    triggerVersions[Number(P.get(e, 1)?.v ?? 0n)] = Number(P.get(e, 2)?.v ?? 0n);
+  }
+  return { version: P.str(P.get(body, 28)), protocolVersion: Number(P.get(body, 9)?.v ?? 0n), triggerVersions };
+}
+// what differs from the tested Core; [] = it is the tested one
+export function versionDiffs(live, tested = TESTED.core) {
+  const d = [];
+  if (live.version !== tested.version) d.push(`core "${live.version}" (tested "${tested.version}")`);
+  if (live.protocolVersion !== tested.protocolVersion) d.push(`protocol ${live.protocolVersion} (tested ${tested.protocolVersion})`);
+  const lt = live.triggerVersions, tt = tested.triggerVersions;
+  const rules = [...new Set([...Object.keys(lt), ...Object.keys(tt)])].filter((k) => lt[k] !== tt[k]).map((k) => `type ${k} ${tt[k] ?? '-'}->${lt[k] ?? '-'}`);
+  if (rules.length) d.push(`smart rule formats ${rules.join(', ')}`);
+  return d;
+}
 
 function deviceId() {
   const f = join(dirname(fileURLToPath(import.meta.url)), 'device-id.txt');
@@ -46,7 +76,8 @@ async function open(host, path) {
 // sessionFile: reuse a stored SessionId (skips /Identify and the login) and remember the last DbHash; falls back to a
 // fresh login when the Core rejects the stored session. fresh: always log in (and store the new session).
 // noLogin: use only the stored session, never the password (throws when there is none or it is rejected).
-export async function openSession({ host, cred, salt, tagMap, log = console.log, sessionFile = null, fresh = false, noLogin = false }) {
+// warn: print the untested-Core warning to stderr (version.mjs turns it off and reports by itself).
+export async function openSession({ host, cred, salt, tagMap, log = console.log, sessionFile = null, fresh = false, noLogin = false, warn = true }) {
   const dev = deviceId();
   const login = cred.u.toLowerCase();
   const key = `${cred.isLocal ? 'local' : 'cloud'}:${host}:${login}`;
@@ -88,6 +119,7 @@ export async function openSession({ host, cred, salt, tagMap, log = console.log,
     }
     lc.close();
     const loginResult = Number(P.get(lr.body, 1)?.v ?? 0n);
+    if (loginResult === 6) throw new Error(TOO_OLD);
     if (loginResult !== 1) throw new Error(`login failed, LoginResult=${loginResult}`);
     log(`[login] ok as ${login} (${cred.isLocal ? 'local' : 'cloud'})`);
     return { locationId, sessionId: P.decGuid(P.get(lr.body, 2)) };
@@ -135,8 +167,13 @@ export async function openSession({ host, cred, salt, tagMap, log = console.log,
     sess = await fullLogin();
     r = await attempt(sess, null);
   }
+  if (r.res === 6) throw new Error(TOO_OLD);
   if (r.res !== 1) throw new Error(`reconnect failed, ReconnectResult=${r.res}`);
   const { c, raw } = r;
+  const live = coreVersions(r.rr.body);
+  const diffs = versionDiffs(live);
+  if (diffs.length && warn)
+    console.error(`[version] UNTESTED Core: ${diffs.join('; ')}. Reads may decode wrongly and writes are refused; check it with node probe/version.mjs`);
   log(`[reconnect] ok${saved && sess.sessionId === saved.sessionId ? ' (stored session)' : ''}, ${raw.length} bytes`);
   if (sessionFile) {
     store[key] = { ...sess, dbHash: r.hash?.length ? r.hash.toString('hex') : null, savedAt: new Date().toISOString() };
@@ -146,12 +183,24 @@ export async function openSession({ host, cred, salt, tagMap, log = console.log,
   let nextId = 2;
   const ackT = setInterval(() => { if (toAck.length) c.sendBinary(P.wrap(100, Buffer.concat(toAck.splice(0).map((s) => P.fVarint(1, s))))); }, 4000);
   const pingT = setInterval(() => c.ping(), 6000);
+  const close = () => { clearInterval(ackT); clearInterval(pingT); c.close(1000); };
   return {
     conn: c,
     reconnectRaw: raw,
     stamp,
+    versions: { live, tested: TESTED.core, diffs },
+    // write tools call this right before sending a write: on an untested Core it prints why and exits (code 3)
+    requireTested(what = 'write') {
+      if (!diffs.length) return;
+      if (process.env.UNTESTED_OK) { console.error(`[version] UNTESTED_OK: sending ${what} to an untested Core`); return; }
+      console.error(`[refused] ${what}: the Core is not the tested version (${diffs.join('; ')}).\n`
+        + '  Check it with node probe/version.mjs; when its checks pass, node probe/version.mjs accept records it as tested.\n'
+        + '  UNTESTED_OK=1 sends anyway.');
+      close();
+      process.exit(3);
+    },
     newRequestId: () => nextId++,
     async next(ms) { const r = await c.next(ms); if (r) stamp(P.unwrap(r, tagMap)); return r; },
-    close() { clearInterval(ackT); clearInterval(pingT); c.close(1000); },
+    close,
   };
 }

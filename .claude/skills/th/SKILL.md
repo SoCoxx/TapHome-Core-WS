@@ -31,7 +31,12 @@ node probe/<tool>.mjs ...
   It contains module passwords; never commit or upload it.
 - **`out/config/` is a snapshot.** If the question is about the current state, refresh it first: `node probe/dump.mjs && node probe/export.mjs`.
 - **`site-notes.md`** in the clone root (gitignored) holds facts about this particular installation. Read it before acting if it exists. Examples: device ids agreed for testing, modules that must not be touched, where the backups are, and the user's preferences. Add new facts there when the user agrees to them (a new test device, a decision about what to leave alone). Don't put installation facts into the README or this skill.
-- **Schema.** The protocol schema is committed as `schema/taphome-schema.json`, so no decompiled code is needed to run the tools. If messages decode as `$unknown…` after a TapHome update, the schema is stale: regenerate it with `node probe/build-schema.mjs` from a newly decompiled `TapHome.Core.Lib.Model` (`modelDir` in `config.json`), then run `roundtrip.mjs reconnect`. Never commit decompiled sources.
+- **Schema.** The protocol schema is committed as `schema/taphome-schema.json`, so no decompiled code is needed to run the tools. If messages decode as `$unknown…` after a TapHome update, the schema is stale: regenerate it with `node probe/build-schema.mjs` from a newly decompiled `TapHome.Core.Lib.Model` (`modelDir` in `config.json`), then run `version.mjs`. Never commit decompiled sources.
+- **Tested Core version.** TapHome changes the protocol from time to time. `schema/tested.json` records the Core the tools were tested against, and every session compares the live Core with it. On a different Core, every tool prints `[version] UNTESTED Core: …`, and the write tools refuse to send (exit code 3). When you see that warning:
+  - Tell the user: the Core was updated since the last test, and read results may be wrong.
+  - Run `node probe/version.mjs` and report what changed and whether the schema fits.
+  - Writes stay blocked until the user agrees to `node probe/version.mjs accept`. It records the Core only when the schema fits. Before the first real write, test the write kind on a TEST object.
+  - Never set `UNTESTED_OK=1` without the user's explicit yes for that specific write.
 - **Decompiled client.** If the user decompiled it (`TapHome.Client.Desktop.Wpf`), it is the reference for how the app builds a request. Ask where it is, or check `site-notes.md`.
 
 ## Auth (`/th auth`, first-time setup)
@@ -77,6 +82,7 @@ The tools below are the building blocks; use them for what the composite tools d
 | Media library | `media.mjs list\|get\|put\|delete` (put and delete: TEST names only) |
 | Modbus health | `modbus-health.mjs [hours]` |
 | Watch what the Core broadcasts to other clients | `listen.mjs [seconds]` (run it in the background during a write) |
+| Is the Core the tested version, does the schema fit it | `version.mjs` (exit 0 tested, 1 untested, 2 schema doesn't fit); `version.mjs accept` records it, only with the user's agreement |
 | Check the encoder offline | `roundtrip.mjs rules\|reconnect` (must print `same`) |
 | Regenerate the schema after a TapHome update | `build-schema.mjs [modelDir]` |
 

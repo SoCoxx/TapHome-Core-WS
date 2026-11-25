@@ -89,6 +89,7 @@ console.log(`[device] ${dev.ID} "${dev.Name}" ${dev.Model}  now ${JSON.stringify
 // ValueLogType names for the broadcast's ValueTypeId
 const vlt = schemaForEnums.enums.ValueLogType || {};
 
+s.requireTested(`${sendAction} on device ${dev.ID}`);
 const rid = s.newRequestId();
 const frame = P.wrap(101, body(dev.Name), rid);
 console.log(`[send] ${sendAction}(${sendParams.join(', ')}) RequestsId=${rid} ${frame.length} bytes`);

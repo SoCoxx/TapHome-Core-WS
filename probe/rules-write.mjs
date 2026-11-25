@@ -100,6 +100,7 @@ if (process.env.DRY) {
   setTimeout(() => process.exit(0), 300);
 } else {
   const s = await open();
+  s.requireTested(tagMap[tag].name);
   const rid = s.newRequestId();
   s.conn.sendBinary(P.wrap(tag, frameBody, rid));
   console.log(`[send] ${tagMap[tag].name} RequestsId=${rid}`);

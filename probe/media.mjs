@@ -96,6 +96,7 @@ if (cmd === 'list') {
     done(ok ? 0 : 1);
   }
 } else if (cmd === 'put') {
+  s.requireTested('MessageMediaUploadRequest');
   for (const m of upload.msgs) {
     const r = await ask(m);
     console.log(`[put] position ${m.Position}${m.Buffer ? ` (${Buffer.from(m.Buffer, 'base64').length} B)` : ' (metadata)'}: ErrorCode=${r?.ErrorCode ?? 'no reply'} "${r?.ErrorMessage ?? ''}"`);
@@ -108,6 +109,7 @@ if (cmd === 'list') {
   const r = await meta(id);
   if (!r || r.ErrorMessage || !String(r.OriginalMediaName).startsWith('TEST')) { console.error(`[refused] ${id} is not a TEST media item (${r?.OriginalMediaName ?? r?.ErrorMessage})`); done(1); }
   else {
+    s.requireTested('MessageDeleteMediaRequest');
     const d = await ask({ $type: 'MessageDeleteMediaRequest', MediaIds: [id] });
     console.log(`[delete] "${r.OriginalMediaName}": ErrorCode=${d?.ErrorCode ?? 'no reply'} "${d?.ErrorMessage ?? ''}"`);
     done();

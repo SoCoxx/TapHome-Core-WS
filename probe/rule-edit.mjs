@@ -59,6 +59,7 @@ function copyOrder(from, to) {
 }
 
 async function store(bytes, expect) {
+  s.requireTested(`MessageUpdateTriggerModelsRequest rule ${id}`);
   const rid = s.newRequestId();
   s.conn.sendBinary(P.wrap(299, P.fBytes(1, bytes), rid));
   console.log(`[send] MessageUpdateTriggerModelsRequest rule ${id}, ${bytes.length} bytes`);

@@ -48,13 +48,22 @@ The protocol schema (message classes, field numbers, enums) ships with the repos
    node probe/export.mjs    # -> out/config/, readable files
    ```
 
+**Which Core the client was tested with.** TapHome changes the protocol from time to time, so `schema/tested.json` records the Core the tools were last tested against: its version string, protocol version and smart rule formats (`TriggerVersions`). It also records the app version and protocol version this client sends. Every session compares the Core's reconnect reply with it:
+- **Same Core:** nothing is printed.
+- **Different Core:** every tool prints a `[version] UNTESTED Core: …` warning that lists the differences. Reads go on. Write tools (`control`, `rule-edit`, `rules-write`, `devices-write`, `media put/delete`, `ask --write`) refuse to send and exit with code 3. `UNTESTED_OK=1` sends anyway.
+- **Core rejects the client** (`AppTooOld`): the tools say so. The schema has to be regenerated (below).
+
+`node probe/version.mjs` shows the comparison and checks that the schema still fits the live Core: the whole reconnect reply and every smart rule must decode with no unknown fields and re-encode to the same bytes. Exit code 0 means the tested Core, 1 means untested but the schema fits, and 2 means the schema does not fit. After a Core update:
+1. Run `node probe/version.mjs`. If the schema fits, run `node probe/version.mjs accept`. It records the live Core in `schema/tested.json`, and writes are allowed again. Commit the file. Then try the kinds of writes you use on `TEST …` devices and rules: `accept` verifies reads only.
+2. `accept` refuses when the schema doesn't fit, or when the Core reports a different protocol version than the client sends. Regenerate the schema then (below), set `client.protocolVersion` and `client.softwareVersion` in `schema/tested.json` to the new app's values, and run `accept` again.
+
 **When TapHome updates the protocol** (a new Core and app version that the committed schema doesn't decode), regenerate the schema from the new app:
 1. Decompile the model assembly. With `-p`, ILSpy writes one folder per namespace, which is the layout `build-schema.mjs` expects:
    ```
    ilspycmd -p -o <dir>/TapHome.Core.Lib.Model TapHome.Core.Lib.Model.dll
    ```
 2. Set `modelDir`, then run `node probe/build-schema.mjs`. It prints which classes, enums and tags changed.
-3. Check the result with `node probe/roundtrip.mjs reconnect`.
+3. Check the result with `node probe/version.mjs`, then record the new Core with `node probe/version.mjs accept`.
 
 Don't commit the decompiled folder. The client assembly (`TapHome.Client.Desktop.Wpf`) is worth decompiling too when you research a new write, because it shows exactly how the app builds each request.
 
@@ -107,6 +116,7 @@ All tools live in `probe/` and read `config.json`. Run them from the clone root.
 | `media.mjs` | media library: list, download, upload and delete (`TEST …` names only) |
 | `modbus-health.mjs [hours]` | Modbus register health report |
 | `listen.mjs [seconds]` | listen-only session that prints what the Core broadcasts |
+| `version.mjs [accept]` | is the Core the tested version (`schema/tested.json`), and does the schema fit it; `accept` records it as tested |
 | `roundtrip.mjs rules\|reconnect` | offline encoder check: decode, encode, compare bytes |
 | `build-schema.mjs [modelDir]` | regenerate `schema/taphome-schema.json` from a decompiled `TapHome.Core.Lib.Model` |
 
@@ -117,6 +127,7 @@ Environment variables:
 - `NO_SESSION=1` ignores the stored session and logs in.
 - `DRY=1` (`ask`, `control`) prints the encoded frame without connecting.
 - `OFFLINE=1` (`find`) searches `out/reconnect.json` instead of connecting; values are as old as the last dump.
+- `UNTESTED_OK=1` lets the write tools send to a Core that differs from `schema/tested.json`.
 
 ## Safety
 
@@ -139,7 +150,7 @@ Don't experiment with:
 
 ## Status
 
-Tested with Core `2025.2.32396` (protocol 89, about 580 devices):
+Tested with Core `2025.2.32396` (protocol 89, about 580 devices). `schema/tested.json` holds the exact versions, and `node probe/version.mjs` compares them with your Core:
 
 | Step | Local user | Cloud account |
 |---|---|---|

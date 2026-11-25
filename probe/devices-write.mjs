@@ -58,6 +58,7 @@ if (cmd !== 'add') {
   console.error(`[refused] a device named "${req.DeviceName}" already exists`); s.close(); process.exit(1);
 }
 
+s.requireTested(req.$type);
 const rid = s.newRequestId();
 s.conn.sendBinary(enc.message({ ...req, RequestsId: rid }, 'MessageBase'));
 console.log(`[send] ${req.$type} RequestsId=${rid}`);

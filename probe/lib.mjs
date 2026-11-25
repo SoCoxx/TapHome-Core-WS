@@ -248,7 +248,8 @@ export async function connect({ offline = !!process.env.OFFLINE } = {}) {
     }
     return null;
   }
-  return { conf, idx: makeIndex(conf, T), live: true, ask, close() { s.close(); setTimeout(() => process.exit(0), 300); } };
+  return { conf, idx: makeIndex(conf, T), live: true, ask, versions: s.versions, requireTested: s.requireTested,
+    close() { s.close(); setTimeout(() => process.exit(0), 300); } };
 }
 
 // ---------- reply decoders ----------
