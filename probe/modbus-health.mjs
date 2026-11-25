@@ -18,10 +18,10 @@ const dec = makeDecoder(schema), enc = makeEncoder(schema, { strict: true });
 const tagMap = loadSchema().tagMap;
 
 const s = await openSession({ ...cfg.session(), tagMap, log: () => {} });
-const cfg = dec.message(s.reconnectRaw, 'MessageBase');
-const byId = new Map((cfg.Devices || []).map((d) => [d.ID, d]));
-const modbusCcus = new Set((cfg.Ccus || []).filter((c) => /Modbus/i.test(c.Model)).map((c) => c.CcuId));
-const modules = (cfg.Devices || []).filter((d) => modbusCcus.has(d.CcuId) && d.Model === 'ModbusModule');
+const conf = dec.message(s.reconnectRaw, 'MessageBase');
+const byId = new Map((conf.Devices || []).map((d) => [d.ID, d]));
+const modbusCcus = new Set((conf.Ccus || []).filter((c) => /Modbus/i.test(c.Model)).map((c) => c.CcuId));
+const modules = (conf.Devices || []).filter((d) => modbusCcus.has(d.CcuId) && d.Model === 'ModbusModule');
 
 async function ask(req) { // send one request, return the decoded reply (null on timeout)
   const rid = s.newRequestId();

@@ -95,6 +95,10 @@ All tools live in `probe/` and read `config.json`. Run them from the clone root.
 | `auth.mjs [dll]` / `status` / `logout` | read the password salt from the TapHome app, check it with one login, save it to `config.json` and store the session; check or forget the stored session |
 | `dump.mjs` | full configuration → `out/reconnect.json` (+ raw `reconnect.bin`) |
 | `export.mjs` | `out/reconnect.json` → readable files in `out/config/` (offline) |
+| `find.mjs <query> …` | find devices, rules, zones and categories by id or name words, with the devices' live values; `--rules` lists each device's rules (read-only) |
+| `why.mjs <device>` | why a device did or didn't change: the log with rule and device names, every rule writing it with live status, summary and the current values its condition reads (read-only) |
+| `rule.mjs <rule>` | one smart rule: summary, full script, live status on its outputs, current variable values, errors, last script run (read-only) |
+| `history.mjs <device> [ValueLogType]` | value history with the request built for you: `--hours`/`--days`, `--agg raw\|1h\|1d\|1m`, summary, `--csv` (read-only) |
 | `ask.mjs '<json>'` | send any single request and print the decoded reply; read-only unless `--write` |
 | `control.mjs <device> …` | device commands, the way the app sends them |
 | `rule-edit.mjs pull\|push\|restore <rule>` | edit a smart rule as JSON, with checks and undo |
@@ -112,6 +116,7 @@ Environment variables:
 - `FRAMES=1` logs every WebSocket frame.
 - `NO_SESSION=1` ignores the stored session and logs in.
 - `DRY=1` (`ask`, `control`) prints the encoded frame without connecting.
+- `OFFLINE=1` (`find`) searches `out/reconnect.json` instead of connecting; values are as old as the last dump.
 
 ## Safety
 

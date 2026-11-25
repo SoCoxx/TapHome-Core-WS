@@ -8,6 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSchema, makeDecoder } from './schema.mjs';
 import { loadConfig } from './config.mjs';
+import { translator, makeRuleDescriber, connIds, ruleTexts } from './lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'out');
 const d = JSON.parse(readFileSync(join(root, 'reconnect.json'), 'utf8'));
@@ -17,14 +18,8 @@ const outDir = join(root, 'config');
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
-// optional config.json "translations": a TapHome.Translations .resx (decompiled from runtime/<lang>/TapHome.Translations.resources.dll)
-// to resolve built-in names stored as ${translation_key}
-const tr = {};
-if (cfg.translations) {
-  const unxml = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
-  for (const m of readFileSync(cfg.translations, 'utf8').matchAll(/<data name="([^"]+)"[^>]*>\s*<value>([\s\S]*?)<\/value>/g)) tr[m[1]] = unxml(m[2]);
-}
-const T = (s) => (typeof s === 'string' ? s.replace(/\$\{(\w+)\}/g, (all, k) => tr[k] ?? all) : s);
+// optional config.json "translations": resolve built-in names stored as ${translation_key}
+const T = translator(cfg);
 for (const x of [...d.Dashboards, ...d.Devices, ...d.Ccus]) if (x.Name) x.Name = T(x.Name);
 
 const EMPTY = '00000000-0000-0000-0000-000000000000';
@@ -122,61 +117,8 @@ for (const ccu of [...d.Ccus].sort((a, b) => a.CcuId - b.CcuId)) {
 const rules = (d.SmartRules || []).map((b) => dec.message(Buffer.from(b, 'base64'), 'TriggerModel')).filter((r) => !r.IsDeleted);
 for (const r of rules) r.Name = T(r.Name);
 const devName = (id) => `${id} "${devById[id]?.Name ?? 'missing'}"`;
-const connIds = (c) => [...new Set([
-  ...Object.values(c?.InstantConnections?.Connections || {}).flat(),
-  ...Object.values(c?.AggregatedConnections?.Connections || {}).flatMap((m) => Object.values(m || {}).flat()),
-])].filter((x) => typeof x === 'number');
-
-function describeRequest(q) { // ValueLogTypeValueRequest
-  const p = q.Parameters?.DoubleParameters?.Value ?? q.Parameters?.RangeParameters ?? '';
-  const t = q.TimingParameters ? ` [${q.TimingParameters.$type.replace(/TimingParameters$/, '')}${q.TimingParameters.PulseWidthMs ? ' ' + q.TimingParameters.PulseWidthMs + ' ms' : ''}${q.TimingParameters.DelayMs ? ' delay ' + q.TimingParameters.DelayMs + ' ms' : ''}]` : '';
-  return `${q.ActionType ?? 'None'} ${q.ValueLogType}${p !== '' ? ' ' + (typeof p === 'object' ? JSON.stringify(p) : p) : ''}${t}`;
-}
-function describeAction(a) { // ActionModel
-  if (a.ActionType === 'NotifyAction') return `notify "${a.Parameters?.Title ?? ''}" ${a.Parameters?.Message ?? ''}`.trim();
-  const p = a.Parameters || {};
-  return `${devName(p.OutputDeviceId)}: ${(p.ValueLogTypeValueRequests || []).map(describeRequest).join(', ')}`;
-}
-// TimeSpan "58500s" (time of day) -> "16:15"; >= 24 h means the next day ("115200s" -> "08:00+1d")
-const clock = (v) => {
-  const m = /^(\d+)s$/.exec(String(v));
-  if (!m) return v;
-  const s = Number(m[1]), h = Math.floor(s / 3600) % 24, mm = Math.floor((s % 3600) / 60);
-  return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}${s >= 86400 ? '+1d' : ''}`;
-};
-// generic, type-independent summary: *Ids / *Id fields name devices, *Actions fields hold ActionModel lists
-function describeRule(r) {
-  const tp = r.TriggerParameters || {};
-  const lines = [`#${r.Id} ${r.Name}  [${r.TriggerParameters?.$type?.replace(/TriggerParameters$/, '') ?? `type ${r.TriggerTypeId}`}]${r.IsEnabled ? '' : '  (disabled)'}`];
-  for (const [k, v] of Object.entries(tp)) {
-    if (k === '$type') continue;
-    if (/Ids?$/.test(k) && (typeof v === 'number' || Array.isArray(v))) lines.push(`  ${k}: ${[].concat(v).map(devName).join(', ')}`);
-    else if (/Actions$/.test(k) && Array.isArray(v)) for (const a of v) lines.push(`  ${k} -> ${describeAction(a)}`);
-    else if (/Actions$/.test(k) && v && typeof v === 'object') lines.push(`  ${k}: ${Object.entries(v).map(([id, x]) => `${devName(id)}=${x}`).join(', ')}`);
-    else if (/Script|Formula/.test(k) && typeof v === 'string') lines.push(`  ${k}: ${v.split(/\r?\n/).length} line(s), see file`);
-    else if (Array.isArray(v) && v[0]?.Abbreviation) lines.push(`  ${k}: ${v.map((x) => `${x.Abbreviation}=${devName(x.DeviceId)}.${x.ValueLogType}`).join(', ')}`);
-    else if (typeof v !== 'object') lines.push(`  ${k}: ${/Time/.test(k) ? clock(v) : v}`);
-  }
-  // limiting condition: the rule only acts while it holds
-  const lc = r.LimitingConditionParameters;
-  if (lc) {
-    const kind = lc.$type.replace(/LimitingConditionParameters$/, '');
-    let detail = '';
-    if (lc.NonLimitingTimeStart !== undefined || lc.NonLimitingTimeEnd !== undefined) // Time: acts inside start..end
-      detail = ` ${clock(lc.NonLimitingTimeStart ?? '0s')}..${clock(lc.NonLimitingTimeEnd ?? '0s')}`;
-    else if (lc.SwitchId !== undefined) // Switch: acts while the switch is in a state not marked limiting
-      detail = ` ${devName(lc.SwitchId)} blocks when ${[lc.IsOffValueLimiting && 'off', lc.IsOnValueLimiting && 'on'].filter(Boolean).join('/') || '(nothing)'}`;
-    else if (lc.MultiValueSwitchId !== undefined) {
-      const blocked = Object.keys(lc).map((k) => k.match(/^IsValue(\d+)Limiting$/)).filter((m) => m && lc[m[0]]).map((m) => m[1]);
-      detail = ` ${devName(lc.MultiValueSwitchId)} blocks at value ${blocked.join('/') || '(none)'}`;
-    }
-    lines.push(`  condition${r.IsLimitingConditionEnabled ? '' : ' (disabled)'}: ${kind}${detail}`);
-    if (lc.InputVariables?.length)
-      lines.push(`    variables: ${lc.InputVariables.map((x) => `${x.Abbreviation}=${devName(x.DeviceId)}.${x.ValueLogType}`).join(', ')}`);
-    if (lc.EvaluationFormula) for (const l of lc.EvaluationFormula.split(/\r?\n/)) if (l.trim()) lines.push(`    | ${l}`);
-  }
-  return lines.join('\n');
-}
+// generic, type-independent summary (lib.mjs)
+const describeRule = makeRuleDescriber(devName);
 
 const byDevice = {};
 const rulesDir = join(outDir, 'smartrules');
@@ -193,8 +135,7 @@ for (const r of rules.sort((a, b) => a.Id - b.Id)) {
     inputs: inputs.map(devName), outputs: outputs.map(devName), condition: r.LimitingConditionParameters?.$type?.replace(/LimitingConditionParameters$/, '') });
   save(join(rulesDir, `${base}.json`), { summary: summary.split('\n'), ...r });
   // scripts / formulas as separate files so they diff cleanly
-  const texts = { ...Object.fromEntries(Object.entries(r.TriggerParameters || {}).filter(([k, v]) => /Script|Formula/.test(k) && typeof v === 'string')) };
-  if (r.LimitingConditionParameters?.EvaluationFormula) texts.ConditionFormula = r.LimitingConditionParameters.EvaluationFormula;
+  const texts = ruleTexts(r);
   for (const [k, v] of Object.entries(texts)) save(join(rulesDir, `${base}.${k}.txt`), v.replace(/\r?\n/g, '\r\n'));
   ruleIndex.at(-1).summary = summary;
 }

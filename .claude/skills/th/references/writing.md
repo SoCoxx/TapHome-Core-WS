@@ -1,6 +1,6 @@
 # Writing: requests that change the Core
 
-Each section below was tested live on throwaway `TEST …` objects and reverted afterwards, unless noted otherwise. Follow the safety routine in SKILL.md: plan, user approval, dry run, execute, verify. Writes go through `node probe/ask.mjs '<json>' --write` unless a dedicated tool exists. A reply `ErrorCode` of 1 means ok.
+Each section below was tested live on throwaway `TEST …` objects and reverted afterwards, unless noted otherwise. Tested sections count as tested writes under the safety routine in SKILL.md (dry run, execute, verify, with no plan needed); anything marked untested needs a plan and the user's approval. Writes go through `node probe/ask.mjs '<json>' --write` unless a dedicated tool exists. A reply `ErrorCode` of 1 means ok.
 
 ## Device control (`control.mjs`)
 

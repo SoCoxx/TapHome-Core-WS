@@ -7,7 +7,7 @@ description: Work with a TapHome smart-home Core directly over its native WebSoc
 
 The TapHome app talks to the Core over `ws://<core>/Core` with protobuf-net messages. The TapHome-Core-WS tools reproduce that protocol. They can read the full configuration, live values, history and logs, and they can make the same changes the app makes.
 
-Changes made with these tools are as real as changes made in the app, and some requests delete things in bulk. The working agreement is: **nothing changes on the Core without a detailed plan the user has approved first.** See "Safety routine" below; it is the most important part of this skill.
+Changes made with these tools are as real as changes made in the app, and some requests delete things in bulk. The working agreement is: **writes that have already been tested live go ahead when the user asks for them; anything untested or risky needs a detailed plan the user has approved first.** See "Safety routine" below; it is the most important part of this skill.
 
 ## Setup
 
@@ -54,6 +54,17 @@ The tools log in again by themselves when the Core rejects the stored session. `
 
 ## Which tool for what
 
+**Start with the composite tools.** They are read-only, take a device or rule **id or name words** (any case, diacritics optional, Slovak inflections match: `teplota garaz`), and read the live configuration from their own session, so they need no `dump.mjs` first. One run (about 1 s) replaces several `ask.mjs` calls plus grepping `out/config/`. A name that matches several objects prints the candidates with their ids; rerun with the id.
+
+| Need | Tool |
+|---|---|
+| Find a device, rule, zone or category by name; a device's live values (manual override and non-OK status included) | `find.mjs <query> [<query> …] [--rules] [--json]`. `--rules` adds each device's rules with their role (input / condition / variable / output) |
+| "Why did / didn't X happen?" for a device | `why.mjs <device> [--log N] [--brief]`: live values and device errors, the log with rule and device names, every rule writing it with live status, priority, summary and the current value of each variable its condition/formula reads, a script rule's last run, and the rules that only read it |
+| Everything about one smart rule | `rule.mjs <rule>`: summary and full script/formula, live status on each output (and the other rules competing there), current variable and input values, errors, a script rule's last run |
+| Value history | `history.mjs <device> [ValueLogType] [--hours N \| --days N] [--agg raw\|1h\|1d\|1m] [--fn Avg] [--all] [--csv]`: builds the request (dates, aggregation chosen by range), warns when the value or aggregation isn't recorded, prints min/max/avg (for switches: on-time and switch-ons) and the points |
+
+The tools below are the building blocks; use them for what the composite tools don't cover.
+
 | Need | Tool |
 |---|---|
 | First-time setup: salt into `config.json`, checked by a login; stores the session | `auth.mjs [dll]`, `auth.mjs status`, `auth.mjs logout` |
@@ -73,7 +84,27 @@ The request formats for `ask.mjs` are in the reference files. Copy them instead 
 
 ## Safety routine (for anything that changes the Core)
 
-Writes have kept every test reversible when done this way. A vague "continue" is not approval for a write; ask for an explicit yes to the specific plan.
+Writes have kept every test reversible when done this way. There are two tiers.
+
+### Tested writes: just do them
+
+When the user asks for a change that uses a write already tested live, carry it out without presenting a plan or waiting for approval. The user's request is the approval. Tested writes are:
+- device control with `control.mjs` (switch, set a value, push-button actions, module LED)
+- creating a PushButton rule, editing a rule with `rule-edit.mjs` (actions, name, `IsEnabled`), and renaming/deleting TEST rules with `rules-write.mjs`
+- every section of `references/writing.md` that isn't marked as untested (virtual devices and variables, device properties such as zone/category/name, value history, manual override, zones, date periods, exports, media, week plans)
+- the TapHome Bus sequence tested in `references/bus-modules.md`, only on a module with no terminal devices in use
+
+Still run the mechanical safety steps: dry-run the encoding, snapshot `out/reconnect.json`, check each reply, verify with a diff afterwards, and report what changed. Stop and ask before going on if:
+- the dry run, a reply or the diff shows anything you didn't intend (another rule or device changed, a removed list that isn't empty)
+- the change reaches beyond what the user named (bulk edits, several objects at once, overwriting a rule the user didn't mention)
+- it deletes something that wasn't created in this session
+- the request is ambiguous: which device or rule is meant, or what the action should do
+
+If the change needs a physical check (pressing a button, looking at a light), tell the user what to check once it's done.
+
+### Everything else: plan first
+
+Writes that have not been tested live, and anything a reference file says needs its own plan (script properties, terminal configuration of a module with devices in use), go through the full routine. A vague "continue" is not approval for such a write; ask for an explicit yes to the specific plan.
 
 1. **Research read-only first.** Find how the app does it in the decompiled client (e.g. `ClientCommunicationManager.cs`, `*CommunicationHelper.cs`) and send exactly what the app sends. Several requests fail without an app-side detail. For example, an export profile needs a client-generated `Id`, and a new zone needs `DashboardTypeId` 3 and empty content.
 2. **Dry-run the encoding** (`DRY=1`, or `push` without `--send`) and check that it decodes back to what you intended.
@@ -81,9 +112,9 @@ Writes have kept every test reversible when done this way. A vague "continue" is
 4. **Snapshot** `out/reconnect.json` to a scratch folder before the first write.
 5. **Execute step by step**, checking each reply (`ErrorCode` 1 = Ok; `flags=1` = Handled). Stop at a checkpoint where the user looks at the app. If anything unexpected shows up, stop and investigate before the next write. That includes a screenshot showing something you didn't account for, or an extra device in a removed list.
 6. **Verify.** Dump again and diff against the snapshot: devices (ignoring `CurrentValues`/`AggregatedValues`), rules, dashboards, dashboard sets and interfaces. Report what changed and what did not.
-7. **Record** what you learned: protocol facts go in the repo README if the user maintains it, and installation facts go in `site-notes.md`.
+7. **Record** what you learned: protocol facts go in the repo README if the user maintains it, and installation facts go in `site-notes.md`. Once a new write has worked live, add it to the reference files so it counts as tested next time.
 
-Never touch these, even when asked casually without a specific plan:
+Never touch these, even when asked casually without a specific plan (the tested tier never covers them):
 - firmware updates
 - Core restart, reset, restore, clone or update
 - network settings
@@ -96,19 +127,21 @@ Never touch these, even when asked casually without a specific plan:
 
 ## Common workflows
 
-**"Why did / didn't X happen?"** Combine:
+**"Why did / didn't X happen?"** Run `why.mjs <device>` first; it combines everything below. Then read the answer off it: the log line names the rule and device that caused a change, and for each rule the status plus the variable values let you evaluate its condition formula by hand (e.g. `Te + 2 < Se` with `Te=48`, `Se=51`). Follow up with `rule.mjs <id>` for a rule, or `why.mjs` on the device that started the chain (`from device …`). The pieces, for when you need them separately:
 - **the device log:** each change with its origin (Manual / App / SmartRule), the rule id and the triggering device. `{"$type":"MessageGetDeviceLogRequest","DeviceId":N}`
 - **the rules affecting the device** and their live status (`LimitedByCondition` = blocked by its limiting condition right now). `{"$type":"MessageGetAffectingTriggersInfoRequest","DeviceId":N}`
 - **the rule text and condition formula,** from `out/config/smartrules.txt` and `smartrules/<id>-*.json`
 - **the current values** of the condition's input devices
 - **the last-run variable values** for script or formula rules: `MessageGetScriptLastRunValuesRequest`
 
-**History.** History exists only for values with recording on (`EnabledValueAggregations` on the device). The Core keeps raw values for about 5 h, hourly averages for about 8 days, and daily and monthly averages for 1 year. Older data is only in the TapHome cloud. See `references/reading.md`.
+**History.** Use `history.mjs`. History exists only for values with recording on (`EnabledValueAggregations` on the device). The Core keeps raw values for about 5 h, hourly averages for about 8 days, and daily and monthly averages for 1 year. Older data is only in the TapHome cloud. See `references/reading.md`.
+
+**Shared code.** `probe/lib.mjs` holds what the tools share: `connect()` (one session with the live configuration and an `ask(req)` that returns the decoded reply), the name index (`resolveDevice`, `resolveRule`, `valueText`, `describeRule`, rules by device), and the decoders for history, logs, script values and errors. A new read-only tool is a few lines on top of it; see `why.mjs`.
 
 **Editing a rule.**
 1. Run `pull <id>`. Edit `out/edit/<id>.json`, copying action shapes from existing rules in `out/config/smartrules/`.
 2. Run `push <id>` (a dry run). It shows a field diff, and it refuses if there are typos, if the `Id` changed, or if the live rule changed since the pull.
-3. Present the plan, then run `push <id> --send` after approval.
+3. If the diff shows only what you intended, run `push <id> --send` (a tested write; see "Safety routine").
 4. The Core fills in `TriggerInputs` and `Priorities` itself. `restore <id> --send` undoes the change.
 
 ## Reference files
