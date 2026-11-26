@@ -43,10 +43,11 @@ node probe/devices-write.mjs delete <id>          # ForceDelete true, as the app
   - `MessageDeleteDeviceRequest`
 - **Interface/model pairs** come from the app's `AddVirtualVariableDialog` and `AddVirtualDeviceDialog`. Examples: `Switch`/`VirtualSwitch`, `MultiValueSwitch`/`VirtualMultiValueSwitch`, `Thermostat`/`VirtualThermostatDummy`, `TemperatureSensor`/`VirtualTemperatureSensor`, plus the time and sun variables.
 - **A new device has no zone or category.** Set them with device properties (below).
+- **Non-TEST names.** `devices-write.mjs` refuses anything not named `TEST …`. For a real device the user asked for, send the same request directly: `ask.mjs '{"$type":"MessageAddDeviceRequest","DeviceName":"…","Interface":"Switch","Model":"VirtualSwitch","DeviceTypeId":0}' --write`. The reply is `MessageAddDeviceResponse`; find the new id with `find.mjs <name>`. Tested live.
 
 ## Device properties (zone, category, name, …)
 
-`{"$type":"MessageUpdateDevicePropertiesRequest","DeviceId":N,"DeviceName":"<current name>","DeviceProperties":{"ZoneId":"<guid>"}}`. Send **only the changed keys**, as the app's `GetChangedDeviceProperties()` does.
+`{"$type":"MessageUpdateDevicePropertiesRequest","DeviceId":N,"DeviceName":"<current name>","DeviceProperties":{"ZoneId":"<guid>"}}`. Send **only the changed keys**, as the app's `GetChangedDeviceProperties()` does. Zone and category can go in one request (`{"ZoneId":…,"CategoryId":…}`; tested). The reply can be slow or missing although the change was applied, so verify with `find.mjs <id>`.
 
 - Moving a device into a static zone (type 1, e.g. the whole-house zone) also changes that zone's stored content; moving it out restores it.
 - Script properties can be changed this way too, but a bad script breaks a real device. That needs its own plan, and it was not tested.

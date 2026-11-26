@@ -39,7 +39,9 @@ The request is `{"$type":"MessageGetDeviceLogRequest","DeviceId":N}` and returns
 Examples:
 - A button press: `[Manual] rule <r>, from device <button>`.
 - A schedule: `[SmartRule] rule <r>, from device 1` (device 1 = the clock).
-- A device set from outside through the exposed TapHome API (presence detection, other integrations) shows that origin too. Repeated flapping there often explains rules switching back and forth.
+- A device set from outside through the exposed TapHome API (presence detection, other integrations): `[SlaveInterface] from device 1`. Repeated flapping there often explains rules switching back and forth. A device with no rules but such log lines is in use, so never treat it as unused.
+- An app press of a physical button: `[App] rule <r>, from device <button>, user <id>`.
+- A press that changed nothing leaves no line on the output. Compare the button's own log (`ButtonPressed=1` short, `2` long) with the output's log to spot presses that lost against a holding rule (see smart-rules.md).
 
 ## Rules affecting a device
 
@@ -88,7 +90,7 @@ The request is `{"$type":"MessageGetScriptLastRunValuesRequest","LastRunId":{"Ob
 | My location (info, attributes, network, uptime, MAC, time) | `MessageGetBasicCorePropertiesRequest` (a name/value list) |
 | Date periods | `MessageGetDateRangesRequest` |
 | Media library | `media.mjs list` / `get <id>` (the Core sends ≤ 4096 B per chunk and no MD5) |
-| Exposed devices (TapHome API) | `MessageGetSlaveInterfacesRequest`, `MessageGetSlaveInterfaceDevicesRequest` (read only; never change it) |
+| Exposed devices (TapHome API) | `MessageGetSlaveInterfacesRequest`, `MessageGetSlaveInterfaceDevicesRequest` (read only; never change it). **The interface's `Parameter1` holds the API token in plain text**: filter it (`grep -viE "token\|password\|Parameter1"`). In `MessageGetSlaveInterfaceDevicesRequest {SlaveInterfaceId}`, field 1 of each device's base64 `SerializedParameters` is its API id |
 | Access control | `MessageGetAccessCardsRequest`, `MessageGetAccessLogsRequest {FromUtc, ToUtc}`, `MessageGetWeekPlansRequest`, `MessageGetWeekPlanProperties {WeekPlanId:[ids]}` (no `Request` suffix), `MessageGetWeekPlanDateRangeRequest {WeekPlanIds}` |
 | Exports | `MessageGetDataExportProfilesRequest` (the `SerializedConfig` decodes as `DeviceValueExportProfileConfig`); `MessageGetStoredDataExportProfileResultRequest {Id, BufferSize}` returns the last automatic result, as JSON |
 

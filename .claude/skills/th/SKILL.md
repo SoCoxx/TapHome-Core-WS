@@ -21,7 +21,8 @@ node probe/<tool>.mjs ...
 ```
 
 - **`config.json`** holds the Core's IP address, the local admin login and the password salt. Never print, copy or commit the file, and don't ask for or paste the credentials into the conversation; the user types them into the file. If `passwordSalt` is empty, or a tool says it's missing, run the auth workflow below.
-- Pipe output through `grep -viE "token|password"` so credentials and access tokens never reach the conversation.
+- Pipe output through `grep -viE "token|password|Parameter1"` so credentials and access tokens never reach the conversation. (`Parameter1` of the exposed-API interface holds the TapHome API token.)
+- **Talk to the user with the app's names.** The app shows no device or rule ids. Unnamed rules show translated: `${smartrule_name_…}` keys are listed in `references/smart-rules.md`.
 - **`out/`** (gitignored) holds generated data:
   - `out/reconnect.json`: the full configuration
   - `out/config/`: a readable export
